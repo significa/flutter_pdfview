@@ -207,6 +207,10 @@
     return _pdfView;
 }
 
+- (void)removeFromSuperview {
+  _controler = nil;
+  _pdfView = nil;
+}
 
 - (void)getPageCount:(FlutterMethodCall*)call result:(FlutterResult)result {
     _pageCount = [NSNumber numberWithUnsignedLong: [[_pdfView document] pageCount]];
