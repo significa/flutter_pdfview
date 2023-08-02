@@ -28,7 +28,7 @@ class _MyAppState extends State<MyApp> {
         corruptedPathPDF = f.path;
       });
     });
-    fromAsset('assets/demo-link.pdf', 'demo.pdf').then((f) {
+    fromAsset('assets/demo.pdf', 'demo.pdf').then((f) {
       setState(() {
         pathPDF = f.path;
       });
@@ -180,6 +180,11 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
   String errorMessage = '';
 
   @override
+  void dispose() {
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -196,10 +201,10 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
           PDFView(
             filePath: widget.path,
             enableSwipe: true,
-            swipeHorizontal: true,
+            swipeHorizontal: false,
             autoSpacing: false,
-            pageFling: true,
-            pageSnap: true,
+            pageFling: false,
+            pageSnap: false,
             defaultPage: currentPage!,
             fitPolicy: FitPolicy.BOTH,
             preventLinkNavigation:
