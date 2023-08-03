@@ -1,9 +1,7 @@
 //
 //  PDFViewFlutterPlugin.swift
-//  flutter_pdfview
 //
-//  Created by Daniel Almeida on 01/08/2023.
-//
+
 
 import Flutter
 import UIKit

@@ -1,8 +1,5 @@
 //
-//  PdfRenderView.swift
-//  pdf_render
-//
-//  Created by Daniel Almeida on 31/07/2023.
+//  FluttedPDFView.swift
 //
 
 import Foundation
@@ -11,20 +8,13 @@ import PDFKit
 import UIKit
 
 enum PDFException: Error {
-    case runtimeError(String)
+  case runtimeError(String)
 }
 
-class FLTPDFViewFactory: NSObject, FlutterPlatformViewFactory {
+// MARK: - FLTPDFViewFactory
+
+class FLTPDFViewFactory: NSObject {
   private var messenger: FlutterBinaryMessenger!
-  
-  func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
-    let arguments: [String: Any]? = (args as? [String : Any]?) ?? [:];
-    let pdfviewController: FLTPDFViewController! = FLTPDFViewController(frame: frame,
-                                                                        viewIdentifier: viewId,
-                                                                        arguments: arguments,
-                                                                        binaryMessenger: messenger)
-    return pdfviewController
-  }
   
   init(messenger: FlutterBinaryMessenger) {
     super.init()
@@ -35,6 +25,21 @@ class FLTPDFViewFactory: NSObject, FlutterPlatformViewFactory {
     return FlutterStandardMessageCodec.sharedInstance()
   }
 }
+
+// MARK: FlutterPlatformViewFactory protocol
+
+extension FLTPDFViewFactory: FlutterPlatformViewFactory {
+  func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
+    let arguments: [String: Any]? = (args as? [String : Any]?) ?? [:];
+    let pdfviewController: FLTPDFViewController! = FLTPDFViewController(frame: frame,
+                                                                        viewIdentifier: viewId,
+                                                                        arguments: arguments,
+                                                                        binaryMessenger: messenger)
+    return pdfviewController
+  }
+}
+
+// MARK: - FLTPDFViewController
 
 class FLTPDFViewController : NSObject, FlutterPlatformView, PDFViewDelegate {
   private var pdfView: FLTPDFView!
@@ -79,7 +84,9 @@ class FLTPDFViewController : NSObject, FlutterPlatformView, PDFViewDelegate {
   }
 }
 
-class FLTPDFViewArguments {
+// MARK: - FLTPDFViewArguments
+
+fileprivate class FLTPDFViewArguments {
   var pageFling: Bool
   var enableSwipe: Bool
   var swipeHorizontal: Bool
@@ -101,6 +108,8 @@ class FLTPDFViewArguments {
     self.pdfData = map["pdfData"] as? FlutterStandardTypedData
   }
 }
+
+// MARK: - FLTPDFView
 
 class FLTPDFView : UIView {
   private weak var controller: FLTPDFViewController!
@@ -134,34 +143,35 @@ class FLTPDFView : UIView {
       let sourcePDFdata = pdfData.data
       document = PDFDocument(data: sourcePDFdata)
     }
-
+    
     if document == nil {
-      controller.invokeChannelMethod(name: "onError", arguments: ["error": "cannot create document: File not in PDF format or corrupted."])
+      controller.invokeChannelMethod(name: "onError",
+                                     arguments: ["error": "cannot create document: File not in PDF format or corrupted."])
     } else {
       pdfView.autoresizesSubviews = true
       pdfView.autoresizingMask = UIView.AutoresizingMask.flexibleWidth
       pdfView.backgroundColor = UIColor(white: 0.95, alpha: 1.0)
-
+      
       if viewArguments.swipeHorizontal {
         pdfView.displayDirection = PDFDisplayDirection.horizontal
       } else {
         pdfView.displayDirection = PDFDisplayDirection.vertical
       }
-
+      
       pdfView.autoScales = viewArguments.autoSpacing
-
+      
       pdfView.usePageViewController(viewArguments.pageFling, withViewOptions: nil)
       pdfView.displayMode = viewArguments.enableSwipe ? PDFDisplayMode.singlePageContinuous : PDFDisplayMode.singlePage
       pdfView.document = document
-
+      
       pdfView.maxScaleFactor = 4.0
       pdfView.minScaleFactor = pdfView.scaleFactorForSizeToFit
-
+      
       if let password = viewArguments.password,
          (pdfView.document?.isEncrypted) ?? false {
         pdfView?.document?.unlock(withPassword: password)
       }
-
+      
       let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(self.onDoubleTap(recognizer:)))
       tapGestureRecognizer.numberOfTapsRequired = 2
       tapGestureRecognizer.numberOfTouchesRequired = 1
@@ -173,31 +183,34 @@ class FLTPDFView : UIView {
         if pageCount <= defaultPageNumber {
           defaultPageNumber = pageCount - 1
         }
-
+        
         defaultPage = document.page(at: defaultPageNumber)
       }
-   
+      
       DispatchQueue.main.async(qos: .background) { [weak self] in
         self?.handleRenderCompleted(pagesCount: document.pageCount)
       }
     }
-
+    
     if #available(iOS 11.0, *) {
       var scrollView: UIScrollView!
-
+      
       for subview: AnyObject in pdfView.subviews {
         if let view = subview as? UIScrollView {
           scrollView = view
         }
       }
-
+      
       scrollView.contentInsetAdjustmentBehavior = UIScrollView.ContentInsetAdjustmentBehavior.never
       if #available(iOS 13.0, *) {
         scrollView.automaticallyAdjustsScrollIndicatorInsets = false
       }
     }
-
-    NotificationCenter.default.addObserver(self, selector: #selector(self.handlePageChanged(notification:)), name:NSNotification.Name.PDFViewPageChanged, object:pdfView)
+    
+    NotificationCenter.default.addObserver(self,
+                                           selector: #selector(self.handlePageChanged(notification:)),
+                                           name: NSNotification.Name.PDFViewPageChanged,
+                                           object:pdfView)
     self.addSubview(pdfView)
     
   }
@@ -224,17 +237,17 @@ class FLTPDFView : UIView {
   override func removeFromSuperview() {
     NotificationCenter.default.removeObserver(self)
   }
-
+  
   func getPageCount(call: FlutterMethodCall, result: FlutterResult) {
     pageCount = pdfView.document?.pageCount
     result(pageCount)
   }
-
+  
   func getCurrentPage(call: FlutterMethodCall, result: FlutterResult) {
     currentPage = pdfView.document?.index(for: pdfView.currentPage!)
     result(currentPage)
   }
-
+  
   func setPage(call: FlutterMethodCall, result: FlutterResult) {
     guard
       let arguments = call.arguments as? [String : Any],
@@ -245,11 +258,11 @@ class FLTPDFView : UIView {
     pdfView.go(to: page)
     result(true)
   }
-
+  
   func onUpdateSettings(call:FlutterMethodCall, result:FlutterResult) {
     result(nil)
   }
-
+  
   @objc func handlePageChanged(notification: NSNotification!) {
     guard
       let currentPage = pdfView.currentPage,
@@ -260,7 +273,7 @@ class FLTPDFView : UIView {
     let arguments = ["page": pageIndex, "total": pageCount]
     controller.invokeChannelMethod(name: "onPageChanged", arguments: arguments)
   }
-
+  
   func handleRenderCompleted(pagesCount: Int!) {
     guard let count = pagesCount else { return }
     controller.invokeChannelMethod(name: "onRender", arguments: ["pages" : count])
@@ -274,7 +287,8 @@ class FLTPDFView : UIView {
         
         let pdfPoint: CGPoint = pdfView.convert(point, to: page)
         let rect: CGRect = page.bounds(for: PDFDisplayBox.mediaBox)
-        let destination: PDFDestination = PDFDestination(page: page, at: CGPointMake(pdfPoint.x - (rect.size.width / 4), pdfPoint.y + (rect.size.height / 4)))
+        let destination: PDFDestination = PDFDestination(page: page,
+                                                         at: CGPointMake(pdfPoint.x - (rect.size.width / 4), pdfPoint.y + (rect.size.height / 4)))
         
         UIView.animate(withDuration: 0.2, animations: { [self] in
           pdfView.scaleFactor = pdfView.scaleFactorForSizeToFit * 2
@@ -289,6 +303,8 @@ class FLTPDFView : UIView {
   }
 }
 
+// MARK: PDFViewDelegate protocol
+
 extension FLTPDFView: PDFViewDelegate {
   func pdfViewWillClick(onLink sender: PDFView, with url: URL) {
     if !viewArguments.preventLinkNavigation {
@@ -297,6 +313,8 @@ extension FLTPDFView: PDFViewDelegate {
     controller.invokeChannelMethod(name: "onLinkHandler", arguments: url.absoluteString)
   }
 }
+
+// MARK: FlutterPlatformView protocol
 
 extension FLTPDFView: FlutterPlatformView {
   func view() -> UIView {
