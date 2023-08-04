@@ -113,6 +113,7 @@ fileprivate class FLTPDFViewArguments {
 
 class FLTPDFView : UIView {
   private weak var controller: FLTPDFViewController!
+  private var document: PDFDocument?
   private var pdfView: PDFView!
   private var pageCount: Int!
   private var currentPage: Int!
@@ -127,13 +128,20 @@ class FLTPDFView : UIView {
     
     controller = controler
     
-    pdfView = PDFView(frame:frame)
+    // Avoiding assert message: [Assert] -[UIScrollView _clampedZoomScale:allowRubberbanding:]: Must be called with non-zero scale
+    let nonZeroFrame = CGRect(x: 0, y: 0, width: 100, height: 100)
+    if (frame.size.width == 0 && frame.size.height == 0) {
+      pdfView = PDFView(frame: nonZeroFrame)
+    } else {
+      pdfView = PDFView(frame: frame)
+    }
+    
     pdfView.delegate = self
     
     guard let argumentsMap = args as? [String: Any] else { return }
     viewArguments = FLTPDFViewArguments(fromMap: argumentsMap)
     
-    var document: PDFDocument!
+    
     if let filePath = viewArguments.filePath {
       let sourcePDFUrl = URL(fileURLWithPath: filePath)
       document = PDFDocument(url: sourcePDFUrl)
@@ -144,75 +152,9 @@ class FLTPDFView : UIView {
       document = PDFDocument(data: sourcePDFdata)
     }
     
-    if document == nil {
-      controller.invokeChannelMethod(name: "onError",
-                                     arguments: ["error": "cannot create document: File not in PDF format or corrupted."])
-    } else {
-      pdfView.autoresizesSubviews = true
-      pdfView.autoresizingMask = UIView.AutoresizingMask.flexibleWidth
-      pdfView.backgroundColor = UIColor(white: 0.95, alpha: 1.0)
-      
-      if viewArguments.swipeHorizontal {
-        pdfView.displayDirection = PDFDisplayDirection.horizontal
-      } else {
-        pdfView.displayDirection = PDFDisplayDirection.vertical
-      }
-      
-      pdfView.autoScales = viewArguments.autoSpacing
-      
-      pdfView.usePageViewController(viewArguments.pageFling, withViewOptions: nil)
-      pdfView.displayMode = viewArguments.enableSwipe ? PDFDisplayMode.singlePageContinuous : PDFDisplayMode.singlePage
-      pdfView.document = document
-      
-      pdfView.maxScaleFactor = 4.0
-      pdfView.minScaleFactor = pdfView.scaleFactorForSizeToFit
-      
-      if let password = viewArguments.password,
-         (pdfView.document?.isEncrypted) ?? false {
-        pdfView?.document?.unlock(withPassword: password)
-      }
-      
-      let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(self.onDoubleTap(recognizer:)))
-      tapGestureRecognizer.numberOfTapsRequired = 2
-      tapGestureRecognizer.numberOfTouchesRequired = 1
-      pdfView.addGestureRecognizer(tapGestureRecognizer)
-      
-      if let pageCount = pdfView.document?.pageCount {
-        var defaultPageNumber = viewArguments.defaultPageNumber
-        
-        if pageCount <= defaultPageNumber {
-          defaultPageNumber = pageCount - 1
-        }
-        
-        defaultPage = document.page(at: defaultPageNumber)
-      }
-      
-      DispatchQueue.main.async(qos: .background) { [weak self] in
-        self?.handleRenderCompleted(pagesCount: document.pageCount)
-      }
+    DispatchQueue.main.async(qos: .background) { [weak self] in
+      self?.setupPdfView()
     }
-    
-    if #available(iOS 11.0, *) {
-      var scrollView: UIScrollView!
-      
-      for subview: AnyObject in pdfView.subviews {
-        if let view = subview as? UIScrollView {
-          scrollView = view
-        }
-      }
-      
-      scrollView.contentInsetAdjustmentBehavior = UIScrollView.ContentInsetAdjustmentBehavior.never
-      if #available(iOS 13.0, *) {
-        scrollView.automaticallyAdjustsScrollIndicatorInsets = false
-      }
-    }
-    
-    NotificationCenter.default.addObserver(self,
-                                           selector: #selector(self.handlePageChanged(notification:)),
-                                           name: NSNotification.Name.PDFViewPageChanged,
-                                           object:pdfView)
-    self.addSubview(pdfView)
-    
   }
   
   required init?(coder: NSCoder) {
@@ -221,6 +163,7 @@ class FLTPDFView : UIView {
   
   override func layoutSubviews() {
     super.layoutSubviews()
+    
     pdfView.frame = self.frame
     pdfView.minScaleFactor = pdfView.scaleFactorForSizeToFit
     pdfView.maxScaleFactor = 4.0
@@ -232,10 +175,6 @@ class FLTPDFView : UIView {
       pdfView.go(to: defaultPage)
       wasDefaultPageSetted = true
     }
-  }
-  
-  override func removeFromSuperview() {
-    NotificationCenter.default.removeObserver(self)
   }
   
   func getPageCount(call: FlutterMethodCall, result: FlutterResult) {
@@ -271,12 +210,14 @@ class FLTPDFView : UIView {
     else { return }
     
     let arguments = ["page": pageIndex, "total": pageCount]
-    controller.invokeChannelMethod(name: "onPageChanged", arguments: arguments)
+    controller.invokeChannelMethod(name: "onPageChanged",
+                                   arguments: arguments)
   }
   
   func handleRenderCompleted(pagesCount: Int!) {
     guard let count = pagesCount else { return }
-    controller.invokeChannelMethod(name: "onRender", arguments: ["pages" : count])
+    controller.invokeChannelMethod(name: "onRender",
+                                   arguments: ["pages" : count])
   }
   
   @objc func onDoubleTap(recognizer: UITapGestureRecognizer!) {
@@ -300,6 +241,80 @@ class FLTPDFView : UIView {
         })
       }
     }
+  }
+  
+  private func setupPdfView() {
+    guard let document = self.document
+    else { return controller.invokeChannelMethod(name: "onError",
+                                                 arguments: ["error": "cannot create document: File not in PDF format or corrupted."])
+    }
+
+    pdfView.autoresizesSubviews = true
+    pdfView.autoresizingMask = UIView.AutoresizingMask.flexibleWidth
+    pdfView.backgroundColor = UIColor(white: 0.95, alpha: 1.0)
+    
+    if viewArguments.swipeHorizontal {
+      pdfView.displayDirection = PDFDisplayDirection.horizontal
+    } else {
+      pdfView.displayDirection = PDFDisplayDirection.vertical
+    }
+    
+    pdfView.autoScales = viewArguments.autoSpacing
+    
+    pdfView.usePageViewController(viewArguments.pageFling, withViewOptions: ["interPageSpacing": 4])
+    pdfView.displayMode = viewArguments.enableSwipe ? PDFDisplayMode.singlePageContinuous : PDFDisplayMode.singlePage
+    pdfView.document = document
+    
+    pdfView.maxScaleFactor = 4.0
+    pdfView.minScaleFactor = pdfView.scaleFactorForSizeToFit
+    
+    if let password = viewArguments.password,
+       (pdfView.document?.isEncrypted) ?? false {
+      pdfView?.document?.unlock(withPassword: password)
+    }
+    
+    let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(self.onDoubleTap(recognizer:)))
+    tapGestureRecognizer.numberOfTapsRequired = 2
+    tapGestureRecognizer.numberOfTouchesRequired = 1
+    pdfView.addGestureRecognizer(tapGestureRecognizer)
+    
+    if let pageCount = pdfView.document?.pageCount {
+      var defaultPageNumber = viewArguments.defaultPageNumber
+      
+      if pageCount <= defaultPageNumber {
+        defaultPageNumber = pageCount - 1
+      }
+      
+      defaultPage = document.page(at: defaultPageNumber)
+    }
+    
+    DispatchQueue.main.async(qos: .background) { [weak self] in
+      self?.handleRenderCompleted(pagesCount: document.pageCount)
+    }
+    
+    
+    if #available(iOS 11.0, *) {
+      var scrollView: UIScrollView?
+      
+      for subview: AnyObject in pdfView.subviews {
+        if let view = subview as? UIScrollView {
+          scrollView = view
+        }
+      }
+      
+      if let scrollView = scrollView {
+        scrollView.contentInsetAdjustmentBehavior = UIScrollView.ContentInsetAdjustmentBehavior.never
+        if #available(iOS 13.0, *) {
+          scrollView.automaticallyAdjustsScrollIndicatorInsets = false
+        }
+      }
+    }
+    
+    NotificationCenter.default.addObserver(self,
+                                           selector: #selector(self.handlePageChanged(notification:)),
+                                           name: NSNotification.Name.PDFViewPageChanged,
+                                           object:pdfView)
+    self.addSubview(pdfView)
   }
 }
 
